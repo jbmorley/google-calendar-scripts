@@ -2,14 +2,21 @@
 
 from __future__ import print_function
 
-import time
+import argparse
 import datetime
-import pickle
 import os.path
+import pickle
+import re
+import sys
+import time
+
+import googleapiclient
+import ics
 
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
+
 
 # If modifying these scopes, delete the file token.pickle.
 SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -31,13 +38,31 @@ def calendar_events(service, **kwargs):
         response = request.execute()
         events = response.get('items', [])
         if not events:
-            raise StopIteration
+            return
         for event in events:
             yield event
         request = calendar_events.list_next(previous_request=request, previous_response=response)
 
 
+def ics_event_uids(path):
+    # Unfortunately Calendar.app seems to be able to generate corrupt ICS files (certainly the ics package doesn't know
+    # how to handle then), so this performs an incredibly rudimentary regex-based approach to getting the event UIDs.
+    # At least it's fast. 🤦🏻‍♂️
+    expression = re.compile(r"^UID:(.+)$")
+    with open(path) as fh:
+        for line in fh.readlines():
+            matches = expression.match(line.strip())
+            if matches:
+                yield matches.group(1)
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Find all events from Google Calendar that exist in an ICS file")
+    parser.add_argument('ics', help="ICS file containing events to search for")
+    parser.add_argument('--delete', action='store_true', default=False, help="delete the matching events")
+    options = parser.parse_args()
+    ics_path = os.path.abspath(options.ics)
+    should_delete = options.delete
 
     creds = None
 
@@ -64,16 +89,40 @@ def main():
 
     service = build('calendar', 'v3', credentials=creds)
 
-    # Call the Calendar API
-    for event in calendar_events(service=service,
-                                 calendarId='primary',
-                                 timeMin=datetime.datetime.utcnow().isoformat() + 'Z',
-                                 maxResults=10,
-                                 singleEvents=True,
-                                 orderBy='startTime'):
+    calendar_id = 'primary'
+
+    # Iterate over the UIDs in the ICS file.
+    for uid in ics_event_uids(ics_path):
+
+        # Search for a corresponding Google Calendar event.
+        try:
+            sys.stdout.write(".")
+            sys.stdout.flush()
+            time.sleep(0.05)
+            event = next(calendar_events(service=service,
+                                         calendarId=calendar_id,
+                                         maxResults=1,
+                                         singleEvents=True,
+                                         iCalUID=uid))
+        except StopIteration:
+            continue
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
+        # Prefer recurringEventId if it exists to ensure all recurrences are deleted.
+        event_id = event['recurringEventId'] if 'recurringEventId' in event else event['id']
         start = event['start'].get('dateTime', event['start'].get('date'))
-        print(start, event['summary'], event['iCalUID'])
-        time.sleep(1)
+        summary = event['summary'] if 'summary' in event else event['description']
+        print(f"{start} {summary} [{uid} -> {event_id}]")
+
+        if should_delete:
+            try:
+                service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
+            except googleapiclient.errors.HttpError as error:
+                print(f"Failed to delete resource with error {error}. 😭")
+
+    sys.stdout.write("\n")
+    sys.stdout.flush()
 
 
 if __name__ == '__main__':
