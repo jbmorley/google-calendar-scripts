@@ -54,6 +54,11 @@ def ics_event_uids(path):
                 yield matches.group(1)
 
 
+def write_with_flush(output):
+    sys.stdout.write(output)
+    sys.stdout.flush()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Find all events from Google Calendar that exist in an ICS file")
     parser.add_argument('ics', help="ICS file containing events to search for")
@@ -98,21 +103,20 @@ def main():
 
         # Search for a corresponding Google Calendar event.
         try:
-            sys.stdout.write(".")
-            sys.stdout.flush()
             time.sleep(0.05)
             event = next(calendar_events(service=service,
                                          calendarId=calendar_id,
                                          maxResults=1,
                                          singleEvents=True,
                                          iCalUID=uid))
+            write_with_flush(".")
         except StopIteration:
+            write_with_flush("x")
             summary.failing_uids.append(uid)
             continue
 
         if options.verbose:
-            sys.stdout.write("\n")
-            sys.stdout.flush()
+            write_with_flush("\n")
             recurring_event = 'recurringEventId' in event
             event_id =  event['id']
             start = event['start'].get('dateTime', event['start'].get('date'))
@@ -135,8 +139,7 @@ def main():
                 else:
                     raise error
 
-    sys.stdout.write("\n")
-    sys.stdout.flush()
+    write_with_flush("\n")
 
     print(f"ICS contains {summary.count} events.")
     if summary.failing_uids:
