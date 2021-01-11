@@ -2,11 +2,15 @@
 
 ## Installation
 
-```
-git clone git@github.com:jbmorley/google-calendar-scripts.git
-cd google-calendar-scripts
-pipenv install
-```
+1. Checkout the scripts:
+
+   ```
+   git clone git@github.com:jbmorley/google-calendar-scripts.git
+   cd google-calendar-scripts
+   pipenv install
+   ```
+
+2. Generate Google API credentials as described in [Step 1](https://developers.google.com/calendar/quickstart/python#step_1_turn_on_the) of the [Google Calendar API Python Quickstart](https://developers.google.com/calendar/quickstart/python).
 
 ## Scripts
 
