@@ -4,13 +4,14 @@ from __future__ import print_function
 
 import argparse
 import datetime
-import os.path
+import os
 import pickle
 import re
 import sys
 import time
 
 import googleapiclient
+import icalendar
 import ics
 
 from googleapiclient.discovery import build
@@ -94,11 +95,49 @@ def authorize():
     return credentials
 
 
+class ICS(object):
+
+    def __init__(self, path):
+        with open(path) as fh:
+            self.calendar = icalendar.Calendar.from_ical(fh.read())
+
+    def find_component(self, uid):
+        for component in self.calendar.walk():
+            if component.get('uid') == uid:
+                return component
+        raise KeyError(uid)
+
+
+def icalendar_component_summary(component):
+    tab_size = 2
+    description = component.get('description')
+    if description is not None:
+        description = indent(description, " " * (tab_size + 2))
+    return f"{component.get('uid')}\n\t- {component.name}\n\t- {component.get('summary')}\n\t- {description}".expandtabs(tab_size)
+
+
+def indent_line(string, indent):
+    rows, columns = os.popen('stty size', 'r').read().split()
+    columns = int(columns)
+    width = columns - len(indent)
+    return indent.join([string[i:i+width] for i in range(0, len(string), width)])
+
+
+def indent(string, indent):
+    return f"\n{indent}".join([indent_line(line, indent) for line in string.split("\n")])
+
+
+def icalendar_uids(ics):
+    for component in ics.calendar.walk():
+        yield component.get('uid')
+
+
 def main():
     parser = argparse.ArgumentParser(description="Find all events from Google Calendar that exist in an ICS file")
     parser.add_argument('ics', help="ICS file containing events to search for")
     parser.add_argument('--delete', action='store_true', default=False, help="delete the matching events")
     parser.add_argument('--verbose', action='store_true', default=False, help="show verbose output")
+    parser.add_argument('--limit', type=int, default=None, help="limit the number of events processed")
     options = parser.parse_args()
     ics_path = os.path.abspath(options.ics)
 
@@ -107,8 +146,16 @@ def main():
     calendar_id = 'primary'
     summary = Summary()
 
+    print("Loading ICS file...")
+    ics = ICS(ics_path)
+
     # Iterate over the UIDs in the ICS file.
-    for uid in ics_event_uids(ics_path):
+    print("Searching for events...")
+    # for uid in ics_event_uids(ics_path):
+    for uid in icalendar_uids(ics):
+
+        if options.limit is not None and summary.count >= options.limit:
+            break
 
         summary.count = summary.count + 1
 
@@ -152,10 +199,14 @@ def main():
 
     write_with_flush("\n")
 
-    print(f"ICS contains {summary.count} events.")
+    print(f"ICS contains {summary.count} events")
     if summary.failing_uids:
-        print(f"Failed to find {summary.failure_count} events ({summary.failure_percentage}%).")
-        print("\t" + "\n\t".join(summary.failing_uids))
+        print(f"Failed to find {summary.failure_count} events ({summary.failure_percentage}%)")
+        failing_components = [ics.find_component(uid=uid) for uid in summary.failing_uids]
+        failing_components = [component for component in failing_components if (component.name != "VALARM" and component.get('summary') is not None)]
+        print("Missing events:")
+        for component in failing_components:
+            print(icalendar_component_summary(component))
 
 
 if __name__ == '__main__':
