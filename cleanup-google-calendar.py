@@ -110,16 +110,27 @@ def main():
         sys.stdout.flush()
 
         # Prefer recurringEventId if it exists to ensure all recurrences are deleted.
-        event_id = event['recurringEventId'] if 'recurringEventId' in event else event['id']
+        recurring_event = 'recurringEventId' in event
+        event_id =  event['id']
         start = event['start'].get('dateTime', event['start'].get('date'))
         summary = event['summary'] if 'summary' in event else event['description']
         print(f"{start} {summary} [{uid} -> {event_id}]")
 
         if should_delete:
+            # This logic is a little murky and feels a bit off, however it seems to be necessary by observation of the
+            # API behaviour; sometimes it seems recurrences get orphaned and it's not possible to delete their parent
+            # event. In this case, we want to fallback to deleting the events themselves.
             try:
-                service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
+                if recurring_event:
+                    service.events().delete(calendarId=calendar_id, eventId=event['recurringEventId']).execute()
+                else:
+                    service.events().delete(calendarId=calendar_id, eventId=event['id']).execute()
             except googleapiclient.errors.HttpError as error:
-                print(f"Failed to delete resource with error {error}. 😭")
+                # If we failed to delete a recurring event, then delete the leaf node instead.
+                if recurring_event:
+                    service.events().delete(calendarId=calendar_id, eventId=event['id']).execute()
+                else:
+                    raise error
 
     sys.stdout.write("\n")
     sys.stdout.flush()
