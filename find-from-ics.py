@@ -22,6 +22,13 @@ from google.auth.transport.requests import Request
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 
+class Summary(object):
+
+    def __init__(self):
+        self.count = 0
+        self.failing_uids = []
+
+
 def process_response(response):
     events = response.get('items', [])
     if not events:
@@ -60,9 +67,9 @@ def main():
     parser = argparse.ArgumentParser(description="Find all events from Google Calendar that exist in an ICS file")
     parser.add_argument('ics', help="ICS file containing events to search for")
     parser.add_argument('--delete', action='store_true', default=False, help="delete the matching events")
+    parser.add_argument('--verbose', action='store_true', default=False, help="show verbose output")
     options = parser.parse_args()
     ics_path = os.path.abspath(options.ics)
-    should_delete = options.delete
 
     creds = None
 
@@ -91,8 +98,12 @@ def main():
 
     calendar_id = 'primary'
 
+    summary = Summary()
+
     # Iterate over the UIDs in the ICS file.
     for uid in ics_event_uids(ics_path):
+
+        summary.count = summary.count + 1
 
         # Search for a corresponding Google Calendar event.
         try:
@@ -105,18 +116,19 @@ def main():
                                          singleEvents=True,
                                          iCalUID=uid))
         except StopIteration:
+            summary.failing_uids.append(uid)
             continue
-        sys.stdout.write("\n")
-        sys.stdout.flush()
 
-        # Prefer recurringEventId if it exists to ensure all recurrences are deleted.
-        recurring_event = 'recurringEventId' in event
-        event_id =  event['id']
-        start = event['start'].get('dateTime', event['start'].get('date'))
-        summary = event['summary'] if 'summary' in event else event['description']
-        print(f"{start} {summary} [{uid} -> {event_id}]")
+        if options.verbose:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            recurring_event = 'recurringEventId' in event
+            event_id =  event['id']
+            start = event['start'].get('dateTime', event['start'].get('date'))
+            description = event['summary'] if 'summary' in event else event['description']
+            print(f"{start} {description} [{uid} -> {event_id}]")
 
-        if should_delete:
+        if options.delete:
             # This logic is a little murky and feels a bit off, however it seems to be necessary by observation of the
             # API behaviour; sometimes it seems recurrences get orphaned and it's not possible to delete their parent
             # event. In this case, we want to fallback to deleting the events themselves.
@@ -134,6 +146,11 @@ def main():
 
     sys.stdout.write("\n")
     sys.stdout.flush()
+
+    print(f"ICS contains {summary.count} events.")
+    if summary.failing_uids:
+        print(f"Failed to find {len(summary.failing_uids)} events.")
+        print("\t" + "\n\t".join(summary.failing_uids))
 
 
 if __name__ == '__main__':
