@@ -29,15 +29,6 @@ class Summary(object):
         self.failing_uids = []
 
 
-def process_response(response):
-    events = response.get('items', [])
-    if not events:
-        print('No upcoming events found.')
-    for event in events:
-        start = event['start'].get('dateTime', event['start'].get('date'))
-        print(start, event['summary'], event['iCalUID'])
-
-
 def calendar_events(service, **kwargs):
     calendar_events = service.events()
     request = calendar_events.list(**kwargs)
