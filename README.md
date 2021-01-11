@@ -10,7 +10,7 @@
    pipenv install
    ```
 
-2. Generate Google API credentials as described in [Step 1](https://developers.google.com/calendar/quickstart/python#step_1_turn_on_the) of the [Google Calendar API Python Quickstart](https://developers.google.com/calendar/quickstart/python).
+2. Generate Google API credentials as described in [Step 1](https://developers.google.com/calendar/quickstart/python#step_1_turn_on_the) of the [Google Calendar API Python Quickstart](https://developers.google.com/calendar/quickstart/python), saving `credentials.json` in the newly created `google-calendar-scripts` directory.
 
 ## Scripts
 
