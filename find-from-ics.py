@@ -28,6 +28,14 @@ class Summary(object):
         self.count = 0
         self.failing_uids = []
 
+    @property
+    def failure_count(self):
+        return len(self.failing_uids)
+
+    @property
+    def failure_percentage(self):
+        return int((self.count / self.failure_count) * 100)
+
 
 def calendar_events(service, **kwargs):
     calendar_events = service.events()
@@ -59,6 +67,33 @@ def write_with_flush(output):
     sys.stdout.flush()
 
 
+def authorize():
+    credentials = None
+
+    # The file token.pickle stores the user's access and refresh tokens, and is
+    # created automatically when the authorization flow completes for the first
+    # time.
+    if os.path.exists('token.pickle'):
+        with open('token.pickle', 'rb') as token:
+            credentials = pickle.load(token)
+
+    # If there are no (valid) credentials available, let the user log in.
+    if not credentials or not credentials.valid:
+
+        if credentials and credentials.expired and credentials.refresh_token:
+            credentials.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                'credentials.json', SCOPES)
+            credentials = flow.run_local_server(port=0)
+
+        # Save the credentials for the next run
+        with open('token.pickle', 'wb') as token:
+            pickle.dump(credentials, token)
+
+    return credentials
+
+
 def main():
     parser = argparse.ArgumentParser(description="Find all events from Google Calendar that exist in an ICS file")
     parser.add_argument('ics', help="ICS file containing events to search for")
@@ -67,33 +102,9 @@ def main():
     options = parser.parse_args()
     ics_path = os.path.abspath(options.ics)
 
-    creds = None
-
-    # The file token.pickle stores the user's access and refresh tokens, and is
-    # created automatically when the authorization flow completes for the first
-    # time.
-    if os.path.exists('token.pickle'):
-        with open('token.pickle', 'rb') as token:
-            creds = pickle.load(token)
-
-    # If there are no (valid) credentials available, let the user log in.
-    if not creds or not creds.valid:
-
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
-
-        # Save the credentials for the next run
-        with open('token.pickle', 'wb') as token:
-            pickle.dump(creds, token)
-
-    service = build('calendar', 'v3', credentials=creds)
-
+    credentials = authorize()
+    service = build('calendar', 'v3', credentials=credentials)
     calendar_id = 'primary'
-
     summary = Summary()
 
     # Iterate over the UIDs in the ICS file.
@@ -143,7 +154,7 @@ def main():
 
     print(f"ICS contains {summary.count} events.")
     if summary.failing_uids:
-        print(f"Failed to find {len(summary.failing_uids)} events.")
+        print(f"Failed to find {summary.failure_count} events ({summary.failure_percentage}%).")
         print("\t" + "\n\t".join(summary.failing_uids))
 
 
