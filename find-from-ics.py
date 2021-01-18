@@ -173,12 +173,13 @@ def main():
             summary.failing_uids.append(uid)
             continue
 
+        recurring_event = 'recurringEventId' in event
+        event_id =  event['id']
+        start = event['start'].get('dateTime', event['start'].get('date'))
+        description = event['summary'] if 'summary' in event else event['description']
+
         if options.verbose:
             write_with_flush("\n")
-            recurring_event = 'recurringEventId' in event
-            event_id =  event['id']
-            start = event['start'].get('dateTime', event['start'].get('date'))
-            description = event['summary'] if 'summary' in event else event['description']
             print(f"{start} {description} [{uid} -> {event_id}]")
 
         if options.delete:
